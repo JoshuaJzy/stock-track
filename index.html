@@ -179,7 +179,8 @@ async function fetchTencent(code, mkt) {
   const url = `https://qt.gtimg.cn/q=${tag}`;
   try {
     const resp = await fetch(url);
-    const text = await resp.text();
+    const buffer = await resp.arrayBuffer();
+    const text = new TextDecoder('gbk').decode(buffer);
     const match = text.match(/"([^"]+)"/);
     if (!match) return null;
     const parts = match[1].split('~');
