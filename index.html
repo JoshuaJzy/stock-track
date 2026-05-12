@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Stock Track Dashboard</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif; background: #0f1117; color: #e0e0e0; padding: 20px; }
+  .header { text-align: center; margin-bottom: 20px; }
+  .header h1 { font-size: 24px; color: #fff; }
+  .header span { font-size: 12px; color: #666; }
+  .status-bar { display: flex; justify-content: center; gap: 20px; margin-bottom: 20px; font-size: 11px; color: #888; }
+  .status-dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; margin-right: 4px; }
+  .status-dot.live { background: #22c55e; animation: pulse 2s infinite; }
+  .status-dot.stale { background: #f59e0b; }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+  .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 24px; }
+  @media (max-width: 1100px) { .grid { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 600px) { .grid { grid-template-columns: 1fr; } }
+  .card { background: #1a1d2b; border-radius: 12px; padding: 16px; border: 1px solid #2a2d3a; position: relative; transition: border-color 0.5s; }
+  .card.flash-up { border-color: #22c55e; }
+  .card.flash-down { border-color: #ef4444; }
+  .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+  .card-name { font-size: 15px; font-weight: 700; color: #fff; }
+  .card-code { font-size: 11px; color: #888; }
+  .card-price { font-size: 30px; font-weight: 700; margin-bottom: 2px; transition: color 0.3s; }
+  .card-change-row { font-size: 13px; margin-bottom: 10px; display: flex; gap: 8px; align-items: center; }
+  .up { color: #ef4444; }
+  .down { color: #22c55e; }
+  .metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; font-size: 11px; }
+  .metric-item { display: flex; justify-content: space-between; }
+  .metric-label { color: #888; }
+  .metric-value { color: #bbb; font-weight: 500; }
+  .section-title { font-size: 15px; font-weight: 700; color: #fff; margin: 18px 0 10px 0; padding-bottom: 6px; border-bottom: 1px solid #2a2d3a; }
+  .timeline { display: flex; flex-direction: column; gap: 6px; max-height: 400px; overflow-y: auto; }
+  .timeline-item { background: #1a1d2b; border-radius: 8px; padding: 10px 14px; border-left: 3px solid #3b82f6; display: flex; gap: 10px; align-items: flex-start; font-size: 12px; }
+  .timeline-item.warn { border-left-color: #f59e0b; }
+  .timeline-item.danger { border-left-color: #ef4444; }
+  .timeline-item.good { border-left-color: #22c55e; }
+  .timeline-time { font-size: 10px; color: #666; white-space: nowrap; min-width: 105px; }
+  .timeline-stock { font-size: 11px; font-weight: 700; color: #60a5fa; min-width: 60px; }
+  .timeline-text { font-size: 12px; color: #bbb; flex: 1; }
+  .tag { display: inline-block; font-size: 9px; padding: 1px 5px; border-radius: 3px; margin-right: 3px; }
+  .tag-price { background: #1e3a5f; color: #60a5fa; }
+  .tag-news { background: #3b1f3b; color: #c084fc; }
+  .tag-earn { background: #1f3b1f; color: #4ade80; }
+  .tag-alert { background: #5f3a1e; color: #fbbf24; }
+  .industry-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  @media (max-width: 600px) { .industry-grid { grid-template-columns: 1fr; } }
+  .industry-card { background: #1a1d2b; border-radius: 8px; padding: 12px; border: 1px solid #2a2d3a; }
+  .industry-card h4 { font-size: 13px; color: #fff; margin-bottom: 4px; }
+  .industry-card p { font-size: 11px; color: #999; line-height: 1.5; }
+  .alert-bar { background: #5f3a1e; border: 1px solid #f59e0b; border-radius: 8px; padding: 10px 16px; margin-bottom: 14px; font-size: 12px; color: #fbbf24; display: none; align-items: center; gap: 8px; }
+  .footer { text-align: center; font-size: 10px; color: #555; margin-top: 24px; }
+  .refresh-btn { background: #3b82f6; color: #fff; border: none; padding: 4px 12px; border-radius: 4px; cursor: pointer; font-size: 11px; }
+  .refresh-btn:hover { background: #2563eb; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Stock Track Dashboard</h1>
+</div>
+
+<div class="status-bar">
+  <span><span class="status-dot live" id="statusDot"></span>数据: 腾讯+东方财富 | 盘中 <span id="refreshRate">15s</span>/次 | 下次刷新: <span id="countdown">15s</span> | 已刷新 <span id="refreshCount">0</span>次 | <span id="updateTime">--</span></span>
+  <button class="refresh-btn" onclick="fetchAll()">手动刷新</button>
+</div>
+
+<div class="alert-bar" id="alertBar"><span>⚡</span><span id="alertText"></span></div>
+
+<div class="grid">
+  <!-- 风华高科 -->
+  <div class="card" id="card-000636">
+    <div class="card-header"><div class="card-name">风华高科</div><div class="card-code">000636.SZ</div></div>
+    <div class="card-price" id="price-000636">--</div>
+    <div class="card-change-row" id="change-000636">加载中...</div>
+    <div class="metrics" id="metrics-000636"></div>
+  </div>
+  <!-- 生益科技 -->
+  <div class="card" id="card-600183">
+    <div class="card-header"><div class="card-name">生益科技</div><div class="card-code">600183.SH</div></div>
+    <div class="card-price" id="price-600183">--</div>
+    <div class="card-change-row" id="change-600183">加载中...</div>
+    <div class="metrics" id="metrics-600183"></div>
+  </div>
+  <!-- 菲利华 -->
+  <div class="card" id="card-300395">
+    <div class="card-header"><div class="card-name">菲利华</div><div class="card-code">300395.SZ</div></div>
+    <div class="card-price" id="price-300395">--</div>
+    <div class="card-change-row" id="change-300395">加载中...</div>
+    <div class="metrics" id="metrics-300395"></div>
+  </div>
+  <!-- 金安国纪 -->
+  <div class="card" id="card-002636">
+    <div class="card-header"><div class="card-name">金安国纪</div><div class="card-code">002636.SZ</div></div>
+    <div class="card-price" id="price-002636">--</div>
+    <div class="card-change-row" id="change-002636">加载中...</div>
+    <div class="metrics" id="metrics-002636"></div>
+  </div>
+</div>
+
+<!-- 行业联动 -->
+<div class="section-title">行业联动矩阵</div>
+<div class="industry-grid">
+  <div class="industry-card"><h4>MLCC / 被动元件</h4><p>风华高科核心赛道。MLCC涨价周期延续，AI服务器+车规需求拉动。</p></div>
+  <div class="industry-card"><h4>覆铜板 (CCL) / PCB</h4><p>生益科技、金安国纪核心赛道。AI服务器PCB+高频高速CCL涨价20-40%。</p></div>
+  <div class="industry-card"><h4>石英材料 / 半导体</h4><p>菲利华核心赛道。石英电子纱国产替代，半导体高纯石英全球第一梯队。</p></div>
+  <div class="industry-card"><h4>航天军工电子</h4><p>风华(微波陶瓷) + 菲利华(石英纤维)双覆盖。商业航天+军工电子。</p></div>
+</div>
+
+<!-- 事件时间线 -->
+<div class="section-title">近期重要事件</div>
+<div class="timeline">
+  <div class="timeline-item good"><div class="timeline-time">05-12 10:45</div><div class="timeline-stock"><span class="tag tag-news">行业</span>风华</div><div class="timeline-text">广晟控股Q1利润+72%，风华微波陶瓷获航天级认证</div></div>
+  <div class="timeline-item warn"><div class="timeline-time">05-12 早盘</div><div class="timeline-stock"><span class="tag tag-alert">异动</span>金安</div><div class="timeline-text">金安国纪跌超4%，主力资金连续3日净流出</div></div>
+  <div class="timeline-item good"><div class="timeline-time">05-11 涨停</div><div class="timeline-stock"><span class="tag tag-price">涨停</span>风华</div><div class="timeline-text">风华高科涨停28.46元创新高，MLCC涨价+AI+航天三重催化</div></div>
+  <div class="timeline-item good"><div class="timeline-time">05-11 收盘</div><div class="timeline-stock"><span class="tag tag-price">股价</span>生益</div><div class="timeline-text">生益科技83.66(+2%)，融资余额21.13亿新高，机构目标101元</div></div>
+  <div class="timeline-item"><div class="timeline-time">05-11 收盘</div><div class="timeline-stock"><span class="tag tag-price">股价</span>菲利华</div><div class="timeline-text">菲利华131.45(+2.17%)，定增获批建石英电子纱项目</div></div>
+  <div class="timeline-item good"><div class="timeline-time">05-08</div><div class="timeline-stock"><span class="tag tag-earn">定增</span>菲利华</div><div class="timeline-text">定增募资3亿，建年产1000吨石英电子纱智能制造项目</div></div>
+  <div class="timeline-item good"><div class="timeline-time">05-07</div><div class="timeline-stock"><span class="tag tag-earn">业绩</span>生益</div><div class="timeline-text">业绩说明会：AI覆铜板放量，汽车电子第二曲线突破</div></div>
+  <div class="timeline-item warn"><div class="timeline-time">05-07</div><div class="timeline-stock"><span class="tag tag-alert">异动</span>金安</div><div class="timeline-text">金安国纪异常波动公告：连续3日涨幅偏离值超20%</div></div>
+  <div class="timeline-item warn"><div class="timeline-time">02-06~04-30</div><div class="timeline-stock"><span class="tag tag-alert">减持</span>菲利华</div><div class="timeline-text">6名高管合计减持534万股套现5.98亿，减持计划已届满</div></div>
+</div>
+
+<div class="section-title">Upcoming Events</div>
+<div class="timeline">
+  <div class="timeline-item warn"><div class="timeline-time">05-14 13:30</div><div class="timeline-stock">菲利华</div><div class="timeline-text">2025年度股东大会 (荆州) + 董事会换届选举</div></div>
+  <div class="timeline-item"><div class="timeline-time">05-15</div><div class="timeline-stock">风华高科</div><div class="timeline-text">股权登记日 (10派1元)</div></div>
+  <div class="timeline-item"><div class="timeline-time">05-19</div><div class="timeline-stock">生益科技</div><div class="timeline-text">2025年度股东大会</div></div>
+  <div class="timeline-item"><div class="timeline-time">05-19</div><div class="timeline-stock">金安国纪</div><div class="timeline-text">2025年度股东大会</div></div>
+  <div class="timeline-item warn"><div class="timeline-time">05-21 15:00</div><div class="timeline-stock">风华高科</div><div class="timeline-text">2025年度股东大会 (肇庆总部)</div></div>
+</div>
+
+<div class="footer">Stock Track Dashboard v2.0 | 数据: 腾讯财经实时行情 + 东方财富 | 非投资建议</div>
+
+<script>
+// ====== 实时行情：腾讯财经 API (HTTP, 需在 http:// 下打开或浏览器直接访问) ======
+const STOCKS = {
+  '000636': { name: '风华高科', mkt: 'sz', emCode: '1.000636' },
+  '600183': { name: '生益科技', mkt: 'sh', emCode: '1.600183' },
+  '300395': { name: '菲利华',   mkt: 'sz', emCode: '0.300395' },
+  '002636': { name: '金安国纪', mkt: 'sz', emCode: '0.002636' }
+};
+
+let prevPrices = {};
+let refreshCount = 0;
+const ALERT_THRESHOLD = 3; // 涨跌幅超过3%告警
+
+// 方案A: 腾讯财经 (快)
+async function fetchTencent(code, mkt) {
+  const tag = mkt + code;
+  const url = `https://qt.gtimg.cn/q=${tag}`;
+  try {
+    const resp = await fetch(url);
+    const text = await resp.text();
+    const match = text.match(/"([^"]+)"/);
+    if (!match) return null;
+    const parts = match[1].split('~');
+    if (parts.length < 35) return null;
+    return {
+      name: parts[1],
+      code: parts[2],
+      price: parseFloat(parts[3]),
+      prevClose: parseFloat(parts[4]),
+      open: parseFloat(parts[5]),
+      volume: parseInt(parts[6]) || 0,
+      high: parseFloat(parts[33]),
+      low: parseFloat(parts[34]),
+    };
+  } catch(e) { return null; }
+}
+
+// 方案B: 东方财富 (详细指标)
+async function fetchEastmoney(emCode) {
+  const url = `https://push2.eastmoney.com/api/qt/stock/get?secid=${emCode}&fields=f43,f44,f45,f46,f47,f48,f50,f57,f58,f60,f116,f117,f162,f167,f168,f169,f170,f171`;
+  try {
+    const resp = await fetch(url);
+    const json = await resp.json();
+    const d = json.data;
+    if (!d) return null;
+    return {
+      pe: d.f162,       // PE(TTM)
+      marketCap: d.f116, // 总市值
+      turnover: d.f47,   // 换手率
+      volRatio: d.f50,   // 量比
+    };
+  } catch(e) { return null; }
+}
+
+function formatMoney(n) {
+  if (!n || isNaN(n)) return '--';
+  n = n / 1e8;
+  if (n >= 10000) return (n/10000).toFixed(2) + '万亿';
+  return n.toFixed(0) + '亿';
+}
+
+function formatPE(n) {
+  if (!n || isNaN(n) || n <= 0) return '--';
+  return n.toFixed(1);
+}
+
+async function updateStock(code, cfg) {
+  const card = document.getElementById('card-' + code);
+  const priceEl = document.getElementById('price-' + code);
+  const changeEl = document.getElementById('change-' + code);
+  const metricsEl = document.getElementById('metrics-' + code);
+
+  // 并行获取腾讯+东方财富数据
+  const [t, em] = await Promise.all([
+    fetchTencent(code, cfg.mkt),
+    fetchEastmoney(cfg.emCode)
+  ]);
+
+  if (!t) {
+    priceEl.textContent = '--';
+    changeEl.innerHTML = '<span style="color:#888">数据获取失败</span>';
+    return;
+  }
+
+  const change = t.price - t.prevClose;
+  const changePct = t.prevClose > 0 ? (change / t.prevClose * 100) : 0;
+  const isUp = change > 0;
+  const colorClass = isUp ? 'up' : (change < 0 ? 'down' : '');
+
+  // 价格闪烁
+  if (prevPrices[code] && prevPrices[code] !== t.price) {
+    card.classList.add(t.price > prevPrices[code] ? 'flash-up' : 'flash-down');
+    setTimeout(() => card.classList.remove('flash-up', 'flash-down'), 800);
+  }
+  prevPrices[code] = t.price;
+
+  // 告警检测
+  if (Math.abs(changePct) >= ALERT_THRESHOLD) {
+    showAlert(`${cfg.name} ${isUp ? '涨' : '跌'}幅达 ${Math.abs(changePct).toFixed(1)}%！当前 ${t.price.toFixed(2)}`);
+  }
+
+  priceEl.textContent = t.price.toFixed(2);
+  priceEl.className = 'card-price ' + colorClass;
+
+  changeEl.innerHTML = `
+    <span class="${colorClass}">${change >= 0 ? '+' : ''}${change.toFixed(2)} (${changePct >= 0 ? '+' : ''}${changePct.toFixed(2)}%)</span>
+    ${Math.abs(changePct) >= 1 ? (isUp ? '📈' : '📉') : ''}
+  `;
+
+  const pe = em ? formatPE(em.pe) : '--';
+  const mcap = em ? formatMoney(em.marketCap) : '--';
+  const turnover = em && em.turnover ? em.turnover.toFixed(2) + '%' : '--';
+
+  metricsEl.innerHTML = `
+    <div class="metric-item"><span class="metric-label">开盘</span><span class="metric-value">${t.open.toFixed(2)}</span></div>
+    <div class="metric-item"><span class="metric-label">昨收</span><span class="metric-value">${t.prevClose.toFixed(2)}</span></div>
+    <div class="metric-item"><span class="metric-label">最高</span><span class="metric-value">${t.high.toFixed(2)}</span></div>
+    <div class="metric-item"><span class="metric-label">最低</span><span class="metric-value">${t.low.toFixed(2)}</span></div>
+    <div class="metric-item"><span class="metric-label">市值</span><span class="metric-value">${mcap}</span></div>
+    <div class="metric-item"><span class="metric-label">PE(TTM)</span><span class="metric-value">${pe}</span></div>
+    <div class="metric-item"><span class="metric-label">换手率</span><span class="metric-value">${turnover}</span></div>
+  `;
+}
+
+async function fetchAll() {
+  const promises = Object.entries(STOCKS).map(([code, cfg]) => updateStock(code, cfg));
+  await Promise.allSettled(promises);
+  refreshCount++;
+  document.getElementById('refreshCount').textContent = refreshCount;
+  document.getElementById('updateTime').textContent = new Date().toLocaleTimeString('zh-CN');
+}
+
+function showAlert(msg) {
+  const bar = document.getElementById('alertBar');
+  document.getElementById('alertText').textContent = msg;
+  bar.style.display = 'flex';
+  setTimeout(() => { bar.style.display = 'none'; }, 15000);
+}
+
+// 开盘/收盘判断 (9:30-11:30, 13:00-15:00)
+function isMarketOpen() {
+  const now = new Date();
+  const h = now.getHours(), m = now.getMinutes();
+  const t = h * 60 + m;
+  const weekday = now.getDay();
+  if (weekday === 0 || weekday === 6) return false;
+  return (t >= 570 && t <= 690) || (t >= 780 && t <= 900);
+}
+
+// 动态刷新: 盘中15秒, 盘后5分钟
+let refreshTimer = null;
+let countdown = 0;
+
+function scheduleNext() {
+  if (refreshTimer) clearInterval(refreshTimer);
+  const interval = isMarketOpen() ? 15000 : 300000;
+  countdown = Math.floor(interval / 1000);
+  refreshTimer = setInterval(() => {
+    fetchAll();
+    // 每60秒重新评估一次是否需要切换频率
+    const currentInterval = isMarketOpen() ? 15000 : 300000;
+    const expectedCountdown = Math.floor(currentInterval / 1000);
+    if (Math.abs(interval - currentInterval) > 1000) {
+      scheduleNext();
+    }
+  }, interval);
+}
+
+// 启动
+fetchAll();
+scheduleNext();
+
+// 每秒更新倒计时
+setInterval(() => {
+  countdown--;
+  if (countdown < 0) countdown = isMarketOpen() ? 15 : 300;
+  document.getElementById('countdown').textContent = countdown + 's';
+  const open = isMarketOpen();
+  document.getElementById('statusDot').className = 'status-dot ' + (open ? 'live' : 'stale');
+  document.getElementById('refreshRate').textContent = open ? '15s' : '5min';
+}, 1000);
+</script>
+</body>
+</html>
